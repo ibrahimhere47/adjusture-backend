@@ -7,6 +7,8 @@ import watermarkRoute from "./watermark.route.js";
 import rotateRoute from "./rotate.route.js";
 import roundCornersRoute from "./roundCorners.route.js";
 import addBackgroundRoute from "./addBackground.route.js";
+import doodleRoute from "./doodle.route.js";
+import removeBackgroundRoute from "./removeBackground.route.js";
 
 const router = Router();
 
@@ -18,5 +20,7 @@ router.use(watermarkRoute);
 router.use(rotateRoute);
 router.use(roundCornersRoute);
 router.use(addBackgroundRoute);
+router.use(doodleRoute);
+router.use(removeBackgroundRoute);
 
 export default router;
