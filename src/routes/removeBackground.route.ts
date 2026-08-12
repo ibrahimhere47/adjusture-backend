@@ -13,7 +13,7 @@ const upload = multer({
 });
 
 router.post(
-  "/api/tools/remove-background",
+  "/remove-background",
   upload.single("image"),
   async (req: Request, res: Response) => {
     try {
