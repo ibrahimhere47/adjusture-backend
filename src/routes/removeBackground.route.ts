@@ -34,8 +34,7 @@ router.post(
 
       // model: "medium" is a good quality/speed tradeoff; "large" for max fidelity
       const resultBlob = await removeBackground(inputBlob, {
-        model: "medium",
-        publicPath: "https://staticimgly.com/@imgly/background-removal-data/1.5.1/dist/",
+        model: "medium", // valid for 1.4.5: "small" | "medium"
         output: { format: "image/png", quality: 1 },
       });
 
