@@ -73,9 +73,13 @@ async function buildImageOverlay(
   const resized = await sharp(watermarkBuffer)
   .resize({ width: maxWidth, withoutEnlargement: true })
   .toColourspace("srgb")
-  .ensureAlpha()
+  .removeAlpha()   // strip any existing alpha, guaranteeing exactly 3 RGB bands
+  .ensureAlpha()   // add back exactly one alpha band -> always 4 bands total
   .linear([1, 1, 1, opacityFraction], [0, 0, 0, 0])
   .toBuffer({ resolveWithObject: true });
+
+  const meta = await sharp(watermarkBuffer).metadata();
+  console.log("watermark input:", { channels: meta.channels, space: meta.space, format: meta.format, hasAlpha: meta.hasAlpha });
 
   const { width: wmWidth, height: wmHeight } = resized.info;
   const { left, top } = resolvePosition(position, canvasWidth, canvasHeight, wmWidth, wmHeight, MARGIN_PX);
