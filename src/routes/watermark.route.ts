@@ -71,12 +71,11 @@ async function buildImageOverlay(
   const maxWidth = Math.round(canvasWidth * MAX_WATERMARK_WIDTH_FRACTION);
 
   const resized = await sharp(watermarkBuffer)
-    .resize({ width: maxWidth, withoutEnlargement: true })
-    .ensureAlpha()
-    // Scale down the alpha channel to bake the requested opacity into the pixels themselves,
-    // since sharp's composite() has no per-layer opacity option.
-    .linear([1, 1, 1, opacityFraction], [0, 0, 0, 0])
-    .toBuffer({ resolveWithObject: true });
+  .resize({ width: maxWidth, withoutEnlargement: true })
+  .toColourspace("srgb")
+  .ensureAlpha()
+  .linear([1, 1, 1, opacityFraction], [0, 0, 0, 0])
+  .toBuffer({ resolveWithObject: true });
 
   const { width: wmWidth, height: wmHeight } = resized.info;
   const { left, top } = resolvePosition(position, canvasWidth, canvasHeight, wmWidth, wmHeight, MARGIN_PX);
