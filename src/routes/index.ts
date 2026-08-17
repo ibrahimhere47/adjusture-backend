@@ -11,7 +11,7 @@ import doodleRoute from "./doodle.route.js";
 import removeBackgroundRoute from "./removeBackground.route.js";
 
 import path from "path";
-process.env.FONTCONFIG_PATH = path.join(process.cwd(), "/fonts");
+process.env.FONTCONFIG_PATH = path.join(process.cwd(), "public/fonts");
 
 const router = Router();
 
