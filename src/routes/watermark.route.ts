@@ -70,21 +70,27 @@ async function buildImageOverlay(
 ): Promise<sharp.OverlayOptions> {
   const maxWidth = Math.round(canvasWidth * MAX_WATERMARK_WIDTH_FRACTION);
 
-  const resized = await sharp(watermarkBuffer)
-  .resize({ width: maxWidth, withoutEnlargement: true })
-  .toColourspace("srgb")
-  .removeAlpha()   // strip any existing alpha, guaranteeing exactly 3 RGB bands
-  .ensureAlpha()   // add back exactly one alpha band -> always 4 bands total
-  .linear([1, 1, 1, opacityFraction], [0, 0, 0, 0])
-  .toBuffer({ resolveWithObject: true });
+  const { data, info } = await sharp(watermarkBuffer)
+    .resize({ width: maxWidth, withoutEnlargement: true })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
 
-  const meta = await sharp(watermarkBuffer).metadata();
-  console.log("watermark input:", { channels: meta.channels, space: meta.space, format: meta.format, hasAlpha: meta.hasAlpha });
+  // info.channels is guaranteed 4 (RGBA) here — raw() + ensureAlpha() always
+  // gives you exactly what you asked for, no format-dependent band surprises.
+  for (let i = 3; i < data.length; i += info.channels) {
+    data[i] = Math.round(data[i] * opacityFraction);
+  }
 
-  const { width: wmWidth, height: wmHeight } = resized.info;
-  const { left, top } = resolvePosition(position, canvasWidth, canvasHeight, wmWidth, wmHeight, MARGIN_PX);
+  const dimmed = await sharp(data, {
+    raw: { width: info.width, height: info.height, channels: info.channels },
+  })
+    .png()
+    .toBuffer();
 
-  return { input: resized.data, left: Math.round(left), top: Math.round(top) };
+  const { left, top } = resolvePosition(position, canvasWidth, canvasHeight, info.width, info.height, MARGIN_PX);
+
+  return { input: dimmed, left: Math.round(left), top: Math.round(top) };
 }
 
 function buildTextOverlay(
