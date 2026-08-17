@@ -10,6 +10,9 @@ import addBackgroundRoute from "./addBackground.route.js";
 import doodleRoute from "./doodle.route.js";
 import removeBackgroundRoute from "./removeBackground.route.js";
 
+import path from "path";
+process.env.FONTCONFIG_PATH = path.join(process.cwd(), "/fonts");
+
 const router = Router();
 
 router.use(resizeRoute);
