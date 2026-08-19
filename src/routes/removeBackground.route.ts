@@ -45,11 +45,10 @@ router.post(
 
       // 4. Run AI background removal with 'large' model
       const resultBlob = await removeBackground(inputBlob, {
-        model: "large",
+        model: "isnet" as any, // Forces full ISNet model without VS Code TS complaining
         publicPath: "https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/",
         output: { format: "image/png", quality: 1 },
       });
-
       // Fix 2: Convert Blob ArrayBuffer to Uint8Array first
       const rawArrayBuffer = await resultBlob.arrayBuffer();
       const outputBuffer = Buffer.from(new Uint8Array(rawArrayBuffer));
