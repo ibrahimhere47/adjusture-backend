@@ -19,14 +19,13 @@ router.post(
         return res.status(400).json({ error: "No image file provided" });
       }
 
-      // 1. Get original metadata
       const originalBuffer = req.file.buffer;
       const metadata = await sharp(originalBuffer).metadata();
       if (!metadata.width || !metadata.height) {
         return res.status(400).json({ error: "Invalid image file" });
       }
 
-      // 2. Pre-process: Boost contrast & edge sharpness for the AI model
+      // 1. Sharpen & adjust contrast so the AI model sees distinct edges
       const sharpBuffer = await sharp(originalBuffer)
         .sharpen({ sigma: 1.5 })
         .modulate({ brightness: 1.02, saturation: 1.35 })
@@ -35,12 +34,12 @@ router.post(
 
       const contrastEnhancedBuffer = Buffer.from(new Uint8Array(sharpBuffer));
 
-      // 3. Convert to Blob
+      // 2. Convert to Blob
       const inputBlob = new Blob([contrastEnhancedBuffer], {
         type: req.file.mimetype || "image/png",
       });
 
-      // 4. Run AI with 'medium'
+      // 3. Pass 'medium' to satisfy both Zod runtime schema AND CDN asset paths
       const resultBlob = await removeBackground(inputBlob, {
         model: "medium",
         publicPath: "https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/",
@@ -50,20 +49,19 @@ router.post(
       const rawArrayBuffer = await resultBlob.arrayBuffer();
       const aiOutputBuffer = Buffer.from(new Uint8Array(rawArrayBuffer));
 
-      // 5. Extract Alpha Mask from AI output and resize to match original dimensions
+      // 4. Extract alpha mask from the AI output
       const alphaMask = await sharp(aiOutputBuffer)
         .resize(metadata.width, metadata.height, { fit: "fill" })
-        .extractChannel("alpha") // Extract just the transparency map
+        .extractChannel("alpha")
         .toBuffer();
 
-      // 6. Composite the cleaned Alpha Mask onto the original UNTOUCHED photo
-      // This restores original image quality while keeping the refined mask
+      // 5. Composite alpha mask onto the pristine ORIGINAL image
       const finalBuffer = await sharp(originalBuffer)
         .ensureAlpha()
         .composite([
           {
             input: alphaMask,
-            blend: "dest-in", // Applies the extracted alpha mask directly
+            blend: "dest-in",
           },
         ])
         .png({ quality: 100 })
