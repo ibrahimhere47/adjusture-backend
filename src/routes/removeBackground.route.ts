@@ -5,7 +5,6 @@ import sharp from "sharp";
 import { removeBackground } from "@imgly/background-removal-node";
 
 const router = Router();
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 },
@@ -21,21 +20,19 @@ router.post(
       }
 
       // 1. Get original metadata
-      const metadata = await sharp(req.file.buffer).metadata();
+      const originalBuffer = req.file.buffer;
+      const metadata = await sharp(originalBuffer).metadata();
       if (!metadata.width || !metadata.height) {
         return res.status(400).json({ error: "Invalid image file" });
       }
 
-      // 2. Pre-process contrast & saturation
-      const sharpBuffer = await sharp(req.file.buffer)
-        .modulate({
-          brightness: 1.02,
-          saturation: 1.35,
-        })
-        .linear(1.25, -15)
+      // 2. Pre-process: Boost contrast & edge sharpness for the AI model
+      const sharpBuffer = await sharp(originalBuffer)
+        .sharpen({ sigma: 1.5 })
+        .modulate({ brightness: 1.02, saturation: 1.35 })
+        .linear(1.2, -10)
         .toBuffer();
 
-      // Fix 1: Wrap Sharp Uint8Array/Buffer safely
       const contrastEnhancedBuffer = Buffer.from(new Uint8Array(sharpBuffer));
 
       // 3. Convert to Blob
@@ -43,33 +40,38 @@ router.post(
         type: req.file.mimetype || "image/png",
       });
 
-      // 4. Run AI background removal with 'large' model
+      // 4. Run AI with 'medium'
       const resultBlob = await removeBackground(inputBlob, {
-        model: "isnet" as any, // Forces full ISNet model without VS Code TS complaining
+        model: "medium",
         publicPath: "https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/",
         output: { format: "image/png", quality: 1 },
       });
-      // Fix 2: Convert Blob ArrayBuffer to Uint8Array first
+
       const rawArrayBuffer = await resultBlob.arrayBuffer();
-      const outputBuffer = Buffer.from(new Uint8Array(rawArrayBuffer));
+      const aiOutputBuffer = Buffer.from(new Uint8Array(rawArrayBuffer));
 
-      // 5. Ensure dimensions match original
-      const outMeta = await sharp(outputBuffer).metadata();
-      let finalBuffer = outputBuffer;
+      // 5. Extract Alpha Mask from AI output and resize to match original dimensions
+      const alphaMask = await sharp(aiOutputBuffer)
+        .resize(metadata.width, metadata.height, { fit: "fill" })
+        .extractChannel("alpha") // Extract just the transparency map
+        .toBuffer();
 
-      if (outMeta.width !== metadata.width || outMeta.height !== metadata.height) {
-        const resizedBuffer = await sharp(outputBuffer)
-          .resize(metadata.width, metadata.height, { fit: "fill" })
-          .png({ quality: 100 })
-          .toBuffer();
-
-        // Fix 3: Wrap resized buffer safely
-        finalBuffer = Buffer.from(new Uint8Array(resizedBuffer));
-      }
+      // 6. Composite the cleaned Alpha Mask onto the original UNTOUCHED photo
+      // This restores original image quality while keeping the refined mask
+      const finalBuffer = await sharp(originalBuffer)
+        .ensureAlpha()
+        .composite([
+          {
+            input: alphaMask,
+            blend: "dest-in", // Applies the extracted alpha mask directly
+          },
+        ])
+        .png({ quality: 100 })
+        .toBuffer();
 
       res.set("Content-Type", "image/png");
       res.set("Content-Disposition", "inline; filename=result.png");
-      return res.send(finalBuffer);
+      return res.send(Buffer.from(new Uint8Array(finalBuffer)));
     } catch (err) {
       console.error("Background removal failed:", err);
       return res.status(500).json({ error: "Failed to remove background" });
