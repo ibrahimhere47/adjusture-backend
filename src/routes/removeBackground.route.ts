@@ -35,7 +35,7 @@ router.post(
 
       // 3. Process with 'small' or 'medium' model
       const resultBlob = await removeBackground(inputBlob, {
-        model: "small", // Use 'small' for serverless environments like Vercel
+        model: "medium", // Use 'small' for serverless environments like Vercel
         publicPath: "https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/",
         output: { format: "image/png", quality: 1 },
       });
