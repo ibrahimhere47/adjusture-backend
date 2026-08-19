@@ -19,27 +19,22 @@ router.post(
         return res.status(400).json({ error: "No image file provided" });
       }
 
-      const originalBuffer = req.file.buffer;
-      const metadata = await sharp(originalBuffer).metadata();
+      const metadata = await sharp(req.file.buffer).metadata();
       if (!metadata.width || !metadata.height) {
         return res.status(400).json({ error: "Invalid image file" });
       }
 
-      // 1. Sharpen & adjust contrast so the AI model sees distinct edges
-      const sharpBuffer = await sharp(originalBuffer)
-        .sharpen({ sigma: 1.5 })
+      // 1. Pre-process contrast so skin tones pop against beige backgrounds
+      const preProcessedBuffer = await sharp(req.file.buffer)
         .modulate({ brightness: 1.02, saturation: 1.35 })
         .linear(1.2, -10)
         .toBuffer();
 
-      const contrastEnhancedBuffer = Buffer.from(new Uint8Array(sharpBuffer));
-
-      // 2. Convert to Blob
-      const inputBlob = new Blob([contrastEnhancedBuffer], {
+      const inputBlob = new Blob([new Uint8Array(preProcessedBuffer)], {
         type: req.file.mimetype || "image/png",
       });
 
-      // 3. Pass 'medium' to satisfy both Zod runtime schema AND CDN asset paths
+      // 2. Run background removal directly
       const resultBlob = await removeBackground(inputBlob, {
         model: "medium",
         publicPath: "https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/",
@@ -47,29 +42,24 @@ router.post(
       });
 
       const rawArrayBuffer = await resultBlob.arrayBuffer();
-      const aiOutputBuffer = Buffer.from(new Uint8Array(rawArrayBuffer));
+      const outputBuffer = Buffer.from(new Uint8Array(rawArrayBuffer));
 
-      // 4. Extract alpha mask from the AI output
-      const alphaMask = await sharp(aiOutputBuffer)
-        .resize(metadata.width, metadata.height, { fit: "fill" })
-        .extractChannel("alpha")
-        .toBuffer();
+      // 3. Ensure dimensions match the original image
+      const outMeta = await sharp(outputBuffer).metadata();
+      let finalBuffer = outputBuffer;
 
-      // 5. Composite alpha mask onto the pristine ORIGINAL image
-      const finalBuffer = await sharp(originalBuffer)
-        .ensureAlpha()
-        .composite([
-          {
-            input: alphaMask,
-            blend: "dest-in",
-          },
-        ])
-        .png({ quality: 100 })
-        .toBuffer();
+      if (outMeta.width !== metadata.width || outMeta.height !== metadata.height) {
+        const resized = await sharp(outputBuffer)
+          .resize(metadata.width, metadata.height, { fit: "fill" })
+          .png({ quality: 100 })
+          .toBuffer();
+
+        finalBuffer = Buffer.from(new Uint8Array(resized));
+      }
 
       res.set("Content-Type", "image/png");
       res.set("Content-Disposition", "inline; filename=result.png");
-      return res.send(Buffer.from(new Uint8Array(finalBuffer)));
+      return res.send(finalBuffer);
     } catch (err) {
       console.error("Background removal failed:", err);
       return res.status(500).json({ error: "Failed to remove background" });
