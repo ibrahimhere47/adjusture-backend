@@ -5,11 +5,9 @@ import sharp from "sharp";
 import { removeBackground } from "@imgly/background-removal-node";
 
 const router = Router();
-
-// Keep uploads in memory — avoids disk I/O and extra cleanup logic
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB cap, adjust as needed
+  limits: { fileSize: 25 * 1024 * 1024 },
 });
 
 router.post(
@@ -21,45 +19,37 @@ router.post(
         return res.status(400).json({ error: "No image file provided" });
       }
 
-      // Validate it's actually an image and grab original dimensions
+      // 1. Fetch metadata
       const metadata = await sharp(req.file.buffer).metadata();
       if (!metadata.width || !metadata.height) {
         return res.status(400).json({ error: "Invalid image file" });
       }
 
-      // Convert buffer to a Blob (the lib expects Blob/File/URL input)
-      const inputBlob = new Blob([req.file.buffer], {
-        type: req.file.mimetype,
-      });
+      // 2. Downscale the image buffer for processing to prevent SIGABRT memory spikes
+      const processedBuffer = await sharp(req.file.buffer)
+        .resize({ width: 1024, height: 1024, fit: "inside", withoutEnlargement: true })
+        .toFormat("png")
+        .toBuffer();
 
-      // model: "medium" is a good quality/speed tradeoff; "large" for max fidelity
+      const inputBlob = new Blob([processedBuffer], { type: "image/png" });
+
+      // 3. Process with 'small' or 'medium' model
       const resultBlob = await removeBackground(inputBlob, {
-        model: "medium",
+        model: "small", // Use 'small' for serverless environments like Vercel
         publicPath: "https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/",
         output: { format: "image/png", quality: 1 },
       });
 
       const outputBuffer = Buffer.from(await resultBlob.arrayBuffer());
 
-      // Sanity check: confirm resolution wasn't altered
-      const outMeta = await sharp(outputBuffer).metadata();
-      if (
-        outMeta.width !== metadata.width ||
-        outMeta.height !== metadata.height
-      ) {
-        // Force back to original dimensions if the model ever resizes internally
-        const resized = await sharp(outputBuffer)
-          .resize(metadata.width, metadata.height, { fit: "fill" })
-          .png({ quality: 100 })
-          .toBuffer();
-
-        res.set("Content-Type", "image/png");
-        return res.send(resized);
-      }
+      // 4. Scale back up to original dimensions if required
+      const finalImage = await sharp(outputBuffer)
+        .resize(metadata.width, metadata.height, { fit: "fill" })
+        .png({ quality: 100 })
+        .toBuffer();
 
       res.set("Content-Type", "image/png");
-      res.set("Content-Disposition", "inline; filename=result.png");
-      return res.send(outputBuffer);
+      return res.send(finalImage);
     } catch (err) {
       console.error("Background removal failed:", err);
       return res.status(500).json({ error: "Failed to remove background" });
