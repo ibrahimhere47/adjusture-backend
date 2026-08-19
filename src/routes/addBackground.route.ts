@@ -9,6 +9,8 @@ import type { SingleFileRequest } from "../types/index.js";
 
 const router = Router();
 
+sharp.concurrency(1);
+
 const bodySchema = z.object({
   color: z.string().optional().default("#FFFFFF"),
 });
@@ -19,14 +21,18 @@ router.post("/add-background", upload.single("file"), async (req: SingleFileRequ
   const { color } = bodySchema.parse(req.body);
   const { r, g, b } = parseHexColor(color);
 
-  // sharp's flatten() composites the alpha channel onto an opaque background in one pass.
-  const output = await sharp(req.file.buffer)
-    .flatten({ background: { r, g, b } })
-    .png()
-    .toBuffer();
-
   const fileName = stripExtension(req.file.originalname);
-  res.type("image/png").attachment(`${fileName}-with-bg.png`).send(output);
+  res.type("image/png").attachment(`${fileName}-with-bg.png`);
+
+  sharp(req.file.buffer)
+    .flatten({ background: { r, g, b } })
+    .png({ compressionLevel: 6 })
+    .on("error", (err) => {
+      console.error(err);
+      if (!res.headersSent) res.status(500);
+      res.end();
+    })
+    .pipe(res);
 });
 
 export default router;
