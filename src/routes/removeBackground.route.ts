@@ -5,7 +5,7 @@ import { removeBackground } from "@imgly/background-removal-node";
 import { upload } from "../middleware/upload.js";
 import { ApiError } from "../types/index.js";
 import { stripExtension } from "../utils/filename.js";
-import { refineAlphaEdges } from "../utils/refineAlpha.js";
+import { refineAlphaEdges, boostAlphaConfidence } from "../utils/refineAlpha.js";
 import type { SingleFileRequest } from "../types/index.js";
 
 const router = Router();
@@ -59,9 +59,12 @@ router.post(
 
     const rawOutputBuffer = Buffer.from(await resultBlob.arrayBuffer());
 
-    // Clean up stray alpha noise and soften the cutout edge — this is
-    // the other half of the quality fix, independent of resolution.
-    const refinedBuffer = await refineAlphaEdges(rawOutputBuffer);
+    // Force low-confidence "ghosted" regions (the model genuinely unsure
+    // whether something is foreground) toward a real decision, then clean
+    // up stray noise and soften the remaining edges. Order matters: boost
+    // first (works on the raw, undamaged mask), refine second.
+    const boostedBuffer = await boostAlphaConfidence(rawOutputBuffer);
+    const refinedBuffer = await refineAlphaEdges(boostedBuffer);
 
     // Scale back up to the original dimensions if we downscaled earlier.
     const finalImage = await sharp(refinedBuffer)
