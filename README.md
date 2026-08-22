@@ -47,6 +47,8 @@ All endpoints accept `multipart/form-data` and return the processed image as a f
 | `/rotate`           | POST   | `file`, `degrees`                                                           |
 | `/round-corners`    | POST   | `file`, `radius`                                                            |
 | `/add-background`   | POST   | `file`, `color` (hex, e.g. `#FFFFFF`)                                       |
+| `/remove-background`| POST   | `image` — fast, in-process removal (`@imgly/background-removal-node`)      |
+| `/remove-background-pro` | POST | `image` — higher-quality removal for tough images, see below           |
 | `/health`           | GET    | —                                                                            |
 
 ## Configuration
@@ -56,3 +58,30 @@ Set via `.env` (see `.env.example`):
 - `PORT` — server port (default `8080`)
 - `CORS_ORIGINS` — comma-separated allowed origins
 - `MAX_UPLOAD_BYTES` — max upload size in bytes (default 25 MB)
+- `MAX_BG_REMOVAL_DIMENSION` — safety ceiling (px) for `/remove-background` before it downscales (default `2000`)
+- `BG_REMOVAL_PRO_URL` — URL of a deployed `bg-removal-service` instance, enables `/remove-background-pro`
+
+## Background removal: two tiers
+
+**`/remove-background`** — fast, runs in the same Node process using `@imgly/background-removal-node`.
+Good for typical product photos and portraits. Processes at up to `MAX_BG_REMOVAL_DIMENSION`px
+(previously hardcoded to 1024px, which was the main cause of poor results on busy/multi-object
+images — that ceiling has been raised, and the cutout now gets an alpha edge-refinement pass
+(`src/utils/refineAlpha.ts`) to remove stray noise and soften hard edges).
+
+**`/remove-background-pro`** — for images that are still tough after the above: multiple
+overlapping objects, low-contrast edges (subject and background in similar shades), fine detail
+like hair/fur. This proxies to a separate Python microservice (`/bg-removal-service`) running
+BiRefNet, which benchmarks meaningfully better than the in-Node model on complex scenes, at the
+cost of being slower (seconds rather than milliseconds, especially on CPU).
+
+To enable it:
+1. Deploy `bg-removal-service` (see its own README) — it needs a persistent Python process, so
+   it won't run on the same Vercel serverless functions as this API. A small always-on box
+   (Render, Railway, Fly.io, a droplet, etc.) works well; add a GPU later if you need more speed.
+2. Set `BG_REMOVAL_PRO_URL` in this project's `.env` to that service's URL.
+3. Point your "tough image" UI action (or a retry-with-better-quality button) at
+   `/remove-background-pro` instead of `/remove-background`.
+
+If `BG_REMOVAL_PRO_URL` isn't set, `/remove-background-pro` returns a `503` rather than failing
+silently.
