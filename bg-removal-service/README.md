@@ -1,67 +1,97 @@
-# Darkroom Background Removal Service (RMBG-2.0)
+---
+title: Darkroom BG Removal (BiRefNet)
+emoji: 🖼️
+colorFrom: purple
+colorTo: pink
+sdk: docker
+app_port: 7860
+pinned: false
+---
 
-A standalone Python microservice using Bria AI's RMBG-2.0 — currently
-one of the strongest open-weight background removal models on complex,
-multi-object, low-contrast scenes (the cases where the fast in-Node
-model in this project falls short).
+# Darkroom Background Removal Service (BiRefNet)
 
-## ⚠️ License — read before deploying to production
+A standalone FastAPI microservice using BiRefNet (via `rembg`), deployed
+as a Hugging Face Space (Docker SDK). Your Node.js backend (`darkroom`)
+calls this over HTTP as its `/remove-background-pro` upstream.
 
-RMBG-2.0 is **free for non-commercial/research use**. Commercial use
-requires a paid license from Bria AI:
-https://bria.ai/bria-huggingface-model-license-agreement/
+## License
 
-Since Darkroom is a live product, talk to Bria about commercial terms
-before pointing production traffic at this service. If you need a
-fully open (MIT-licensed) alternative in the meantime, plain BiRefNet
-via `rembg` (`birefnet-general` model) is the fallback — same
-architecture, no proprietary fine-tuning, slightly lower quality on
-the hardest scenes but no licensing question.
+BiRefNet is MIT-licensed, and `rembg`'s `birefnet-general` weights are
+distributed openly — no gated model, no HF token, no commercial-use
+restriction, no fees. This is what's used here instead of RMBG-2.0
+(Bria's proprietary fine-tune of the same architecture), which requires
+a paid commercial license. Quality on the hardest scenes (multiple
+objects, low-contrast edges) is a notch below RMBG-2.0, but still well
+above the fast in-Node model, at zero licensing cost.
 
-## Setup
+## Setup — nothing extra needed
+
+Unlike the RMBG-2.0 version, there's no license to accept and no
+`HF_TOKEN` secret to configure. Weights download automatically on first
+run from `rembg`'s own release mirror.
+
+## What this Space gives you vs. localhost/ngrok
+
+- A stable public HTTPS URL your deployed frontend (or Node backend) can
+  actually reach — no tunnel to keep alive.
+- Free CPU Basic hardware (2 vCPU / 16GB RAM) — comfortably enough for
+  this model, which is lighter than the RMBG-2.0/transformers stack.
+
+## Known limitations of the free tier
+
+- **No uptime guarantee, and it sleeps after ~48h of inactivity**,
+  waking on the next request with a cold start. Fine for testing, not
+  for production SLAs.
+- **Non-persistent disk.** Model weights don't survive a restart/sleep
+  cycle — every cold start re-downloads them. Lighter weights than
+  RMBG-2.0 means this is faster than before, but still adds delay.
+- **CPU only.** Expect a few seconds per image, not sub-second.
+
+## API
+
+Same interface as before — no client-side changes needed if you already
+wired up `/remove-background-pro`:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-First run downloads the RMBG-2.0 weights from Hugging Face (a few GB,
-PyTorch model) — cached after that, no repeated downloads. You'll need
-outbound access to huggingface.co the first time it starts.
-
-Note: loading uses `trust_remote_code=True`, which runs Bria's custom
-model code from their Hugging Face repo. That's expected/required for
-this model — just be aware of what the flag does.
-
-## Run
-
-```bash
-uvicorn app:app --host 0.0.0.0 --port 8000
-```
-
-Test it:
-
-```bash
-curl -X POST http://localhost:8000/remove-background \
+curl -X POST https://<your-space>.hf.space/remove-background \
   -F "file=@test.jpg" \
   --output result.png
 ```
 
-## GPU (strongly recommended for this model)
+```
+GET  /health              -> { status, model }
+POST /remove-background   -> multipart form field "file", returns PNG
+     ?refine=true&feather=1  (optional query params, see app.py)
+```
 
-RMBG-2.0 is a heavier transformer model than the BiRefNet-via-rembg
-version — CPU inference will run several seconds per image. It'll
-auto-detect and use CUDA if available; no code changes needed, just
-make sure `torch` is installed with CUDA support matching your box.
+## Wiring it into the Node backend
 
-## Deployment notes
+Set, on your Node API's host (Vercel, etc.):
 
-- This needs real memory and, ideally, a GPU — don't try to run it in
-  the same place as Vercel serverless functions. A small GPU instance
-  (Render, Lambda Labs, RunPod, a cloud GPU box) will give you the
-  speed this model is capable of; CPU works for low-volume/batch use.
-- Run as its own service/container, called by `/remove-background-pro`
-  in the main API (set `BG_REMOVAL_PRO_URL` there to this service's URL).
-- Add a request queue or concurrency limit for production — one worker
-  processes one image at a time comfortably.
+```
+BG_REMOVAL_PRO_URL=https://<your-space>.hf.space
+```
+
+Redeploy the Node API, then `/remove-background-pro` will route here.
+
+## Deploying / updating this Space
+
+Push this folder's contents (`Dockerfile`, `app.py`, `requirements.txt`,
+this `README.md`) to the Space's git repo:
+
+```bash
+git remote add space https://huggingface.co/spaces/<your-username>/<space-name>
+git push space main
+```
+
+Or drag-and-drop the files in the Space's **Files** tab in the browser.
+The Space rebuilds automatically on push.
+
+## GPU (optional, if you move off the free tier later)
+
+```bash
+pip uninstall onnxruntime
+pip install onnxruntime-gpu
+```
+
+No code changes needed — `rembg` auto-detects CUDA if available.

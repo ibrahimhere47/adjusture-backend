@@ -1,67 +1,46 @@
 """
-Darkroom - Background Removal Microservice (RMBG-2.0)
+Darkroom - Background Removal Microservice (BiRefNet)
 --------------------------------------------------------
 Runs as a standalone Python service. Your Node.js backend calls this
 over HTTP instead of trying to run the segmentation model in Node.
 
-Model: briaai/RMBG-2.0 (via Hugging Face `transformers`)
-  - Built on the BiRefNet architecture, trained further by Bria AI on
-    a proprietary dataset. Benchmarks ahead of plain BiRefNet
-    specifically on complex/multi-object backgrounds and low-contrast
-    edges — this is the case your fast in-Node model struggles with.
-  - LICENSE NOTE: RMBG-2.0 is free for non-commercial/research use.
-    Commercial use requires a paid license from Bria AI. Check
-    https://bria.ai/bria-huggingface-model-license-agreement/ and
-    talk to Bria before using this in production on a commercial
-    product. (Plain BiRefNet, without Bria's weights, is MIT-licensed
-    if you need a fully open alternative — see the previous version of
-    this file / git history.)
-  - Uses `trust_remote_code=True`, which runs Bria's custom model code
-    from their Hugging Face repo. Standard practice for this model,
-    but worth knowing what that flag means.
+Model: BiRefNet, via `rembg`'s "birefnet-general" backend
+  - MIT-licensed, no proprietary training, no gated model, no
+    HF_TOKEN needed. Weights download automatically on first run from
+    rembg's own release mirror, not from a gated Hugging Face repo.
+  - Strong on complex/multi-object backgrounds and low-contrast edges
+    — this is the case your fast in-Node model struggles with. Not
+    quite as strong as RMBG-2.0 on the hardest scenes (RMBG-2.0 is
+    Bria's proprietary fine-tune of this same architecture), but no
+    licensing cost or commercial-use restriction.
+  - Much lighter dependency footprint than RMBG-2.0: onnxruntime
+    instead of torch + transformers + timm + kornia, which means
+    smaller Docker images and faster cold starts on free-tier hosting.
 
-Hardware: works on CPU, but this is a heavier transformer model than
-BiRefNet-via-rembg — expect several seconds per image on CPU, well
-under a second on a decent GPU.
+Hardware: works fine on CPU. Expect a few seconds per image on CPU,
+well under a second on GPU (rembg picks up CUDA automatically if
+onnxruntime-gpu is installed instead of the CPU build).
 """
 
 import io
 import logging
 
-import torch
-from torchvision import transforms
-from transformers import AutoModelForImageSegmentation
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import Response
 from PIL import Image, ImageFilter
 
+from rembg import remove, new_session
+
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("bg-removal-rmbg2")
+logger = logging.getLogger("bg-removal-birefnet")
 
 # ---- Model setup -----------------------------------------------------
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-logger.info("Loading briaai/RMBG-2.0 on device=%s ...", DEVICE)
-
-model = AutoModelForImageSegmentation.from_pretrained(
-    "briaai/RMBG-2.0", trust_remote_code=True
-)
-torch.set_float32_matmul_precision("high")
-model.to(DEVICE)
-model.eval()
-
+SESSION_MODEL = "birefnet-general"
+logger.info("Loading rembg session model=%s ...", SESSION_MODEL)
+session = new_session(SESSION_MODEL)
 logger.info("Model loaded.")
 
-# Preprocessing per Bria's model card: 1024x1024, ImageNet normalization.
-IMAGE_SIZE = (1024, 1024)
-transform_image = transforms.Compose(
-    [
-        transforms.Resize(IMAGE_SIZE),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-    ]
-)
-
-app = FastAPI(title="Darkroom Background Removal Service (RMBG-2.0)")
+app = FastAPI(title="Darkroom Background Removal Service (BiRefNet)")
 
 
 def refine_mask_edges(rgba_img: Image.Image, feather: int = 1) -> Image.Image:
@@ -95,25 +74,21 @@ async def remove_background(
     except Exception:
         raise HTTPException(status_code=400, detail="Could not read image")
 
-    # Guard against absurdly large uploads slowing inference / OOM.
-    # (The model internally works at 1024x1024 regardless, but we cap the
-    # original here so we're not holding huge buffers in memory.)
-    MAX_DIM = 3000
+    # Guard against absurdly large uploads slowing the model down / OOM
+    MAX_DIM = 2500
     if max(input_img.size) > MAX_DIM:
         input_img.thumbnail((MAX_DIM, MAX_DIM), Image.LANCZOS)
 
-    logger.info("Processing image size=%s", input_img.size)
+    logger.info("Processing image size=%s model=%s", input_img.size, SESSION_MODEL)
 
-    input_tensor = transform_image(input_img).unsqueeze(0).to(DEVICE)
-
-    with torch.no_grad():
-        preds = model(input_tensor)[-1].sigmoid().cpu()
-
-    pred = preds[0].squeeze()
-    mask = transforms.ToPILImage()(pred).resize(input_img.size)
-
-    result = input_img.copy()
-    result.putalpha(mask)
+    result = remove(
+        input_img,
+        session=session,
+        alpha_matting=True,              # big win on tough edges
+        alpha_matting_foreground_threshold=240,
+        alpha_matting_background_threshold=10,
+        alpha_matting_erode_size=5,
+    )
 
     if refine:
         result = refine_mask_edges(result, feather=feather)
@@ -127,4 +102,4 @@ async def remove_background(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": "briaai/RMBG-2.0", "device": DEVICE}
+    return {"status": "ok", "model": SESSION_MODEL}
