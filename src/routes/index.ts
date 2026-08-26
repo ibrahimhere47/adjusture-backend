@@ -9,6 +9,7 @@ import roundCornersRoute from "./roundCorners.route.js";
 import addBackgroundRoute from "./addBackground.route.js";
 import doodleRoute from "./doodle.route.js";
 import removeBackgroundRoute from "./removeBackground.route.js";
+import removeBackgroundProRoute from "./removeBackgroundPro.route.js";
 
 import path from "path";
 process.env.FONTCONFIG_PATH = path.join(process.cwd(), "public/fonts");
@@ -25,5 +26,6 @@ router.use(roundCornersRoute);
 router.use(addBackgroundRoute);
 router.use(doodleRoute);
 router.use(removeBackgroundRoute);
+router.use(removeBackgroundProRoute);
 
 export default router;
