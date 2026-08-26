@@ -1,6 +1,6 @@
 import type { CorsOptions } from "cors";
 
-const defaultOrigins = ["http://localhost:5173", "https://darkroom-livid.vercel.app"];
+const defaultOrigins = ["http://localhost:5173", "https://darkroom-livid.vercel.app", "https://dollarstorepk.net"];
 
 const configuredOrigins = process.env.CORS_ORIGINS?.split(",")
   .map((origin) => origin.trim())
