@@ -13,6 +13,11 @@ function isZodError(err: unknown): err is { issues: Array<{ path: (string | numb
   );
 }
 
+/** Structural check for a MongoDB duplicate-key error (e.g. a race on a unique email). */
+function isMongoDuplicateKeyError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === 11000;
+}
+
 /**
  * Single place where every thrown/rejected error in the app is translated into
  * a JSON response. Route handlers just `throw` and let this catch it.
@@ -28,6 +33,11 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     const field = firstIssue?.path.join(".");
     const message = field ? `Invalid value for '${field}': ${firstIssue.message}` : "Invalid request.";
     res.status(400).json({ error: message, details: err.issues });
+    return;
+  }
+
+  if (isMongoDuplicateKeyError(err)) {
+    res.status(409).json({ error: "An account with that email already exists." });
     return;
   }
 

@@ -13,6 +13,17 @@ export interface FieldsFileRequest extends Request {
   files?: Record<string, UploadedFile[]>;
 }
 
+/** The identity attached to `req.user` once `requireAuth` has verified the bearer token. */
+export interface AuthUser {
+  id: string;
+  email: string;
+}
+
+/** Request shape after `requireAuth` middleware has run. */
+export interface AuthedRequest extends Request {
+  user?: AuthUser;
+}
+
 export type ResizeMode = "fit" | "crop" | "exact";
 
 export type SupportedOutputFormat = "jpeg" | "jpg" | "png" | "webp" | "avif";

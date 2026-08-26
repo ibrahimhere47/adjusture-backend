@@ -10,6 +10,7 @@ import addBackgroundRoute from "./addBackground.route.js";
 import doodleRoute from "./doodle.route.js";
 import removeBackgroundRoute from "./removeBackground.route.js";
 import removeBackgroundProRoute from "./removeBackgroundPro.route.js";
+import authRoute from "./auth.route.js";
 
 import path from "path";
 process.env.FONTCONFIG_PATH = path.join(process.cwd(), "public/fonts");
@@ -27,5 +28,6 @@ router.use(addBackgroundRoute);
 router.use(doodleRoute);
 router.use(removeBackgroundRoute);
 router.use(removeBackgroundProRoute);
+router.use(authRoute);
 
 export default router;
