@@ -11,6 +11,7 @@ import doodleRoute from "./doodle.route.js";
 import removeBackgroundRoute from "./removeBackground.route.js";
 import removeBackgroundProRoute from "./removeBackgroundPro.route.js";
 import addBorderRoute from "./addBorder.route.js";
+import colorCorrectRoute from "./colorCorrect.route.js";
 import authRoute from "./auth.route.js";
 
 import path from "path";
@@ -30,6 +31,7 @@ router.use(doodleRoute);
 router.use(removeBackgroundRoute);
 router.use(removeBackgroundProRoute);
 router.use(addBorderRoute);
+router.use(colorCorrectRoute);
 router.use(authRoute);
 
 export default router;
