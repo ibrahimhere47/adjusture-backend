@@ -12,6 +12,7 @@ import removeBackgroundRoute from "./removeBackground.route.js";
 import removeBackgroundProRoute from "./removeBackgroundPro.route.js";
 import addBorderRoute from "./addBorder.route.js";
 import colorCorrectRoute from "./colorCorrect.route.js";
+import addTextRoute from "./addText.route.js";
 import authRoute from "./auth.route.js";
 
 import path from "path";
@@ -32,6 +33,7 @@ router.use(removeBackgroundRoute);
 router.use(removeBackgroundProRoute);
 router.use(addBorderRoute);
 router.use(colorCorrectRoute);
+router.use(addTextRoute);
 router.use(authRoute);
 
 export default router;
